@@ -1,0 +1,43 @@
+########################
+# Reset Drive to single partition
+# No matter encryption or data status
+# By Christopher Miller for 
+# ITSD-ISS of JHU-APL, Dated: 20160526, LastMod: 20170125
+########################
+
+# Get a list of the drives on the system
+# Exclude any volume named similar to NetBoot
+do shell script "diskutil list | grep 2: | awk {'print $3'} | egrep -i -v NetBoot"
+get paragraphs of result
+choose from list (result) with prompt "Select Drive you wish to blank"
+if the result is not false then
+	set driveID to item 1 of the result
+else if driveID is equal to "" then
+	display dialog "Please choose a Drive"
+	quit
+end if
+
+
+# Find the physical IDENTIFIER for the drive selected by the user
+set driveNumber to do shell script "diskutil list | grep " & driveID & " | awk '{print $NF}' | cut -c 1-5 | head -n 1"
+
+
+# Display the Users choice and CAUTION prior to drive reset
+tell application "Finder"
+	display dialog "CAUTION: This will reset " & quoted form of driveID & ", " & quoted form of driveNumber & " to a single, blank partition regardless of data or encryption status.  
+	
+!!! ALL DRIVE DATA WILL BE DESTROYED !!!  
+	
+This CANNOT be undone.  Click 'OK' to proceed or 'Cancel' to quit now." buttons {"OK", "Cancel"} default button {"Cancel"} with title "!!! USE CAUTION !!!" with icon caution
+end tell
+
+
+# UNMOUNT, then RESET the chosen drive to a single, blank partition
+try
+	do shell script "diskutil unmountDisk " & driveNumber & ""
+	do shell script "diskutil partitionDisk " & driveNumber & " GPT HFS+J blank 100%"
+on error
+	display dialog "The drive was unable to be reset.  Please check the hardware or try another utility." with title "!!! DRIVE ERROR !!!" buttons {"OK"} giving up after 60
+end try
+
+return
