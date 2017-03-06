@@ -2,27 +2,41 @@
 # Reset Drive to single partition
 # No matter encryption or data status
 # By Christopher Miller for 
-# ITSD-ISS of JHU-APL, Dated: 20160526, LastMod: 20170125
+# ITSD-ISS of JHU-APL, Dated: 20160526, LastMod: 20170201
 ########################
 
+# Get the name of the current Startup Disk to avoid it in choice of Drives
+tell application "System Events"
+	set StartupDisk to name of startup disk
+end tell
+
+####################################################
 # Get a list of the drives on the system
-# Exclude any volume named similar to NetBoot
-do shell script "diskutil list | grep 2: | awk {'print $3'} | egrep -i -v NetBoot"
+# Exclude any volume named similar to NetBoot or the system's Startup Drive
+####################################################
+
+try
+	do shell script "diskutil list | grep 2: | awk {'print $3'} | egrep -i -v NetBoot | egrep -i -v " & quoted form of StartupDisk & ""
+on error
+	display dialog "No available Drive found, attach Drive or choose -Cancel-"
+end try
 get paragraphs of result
 choose from list (result) with prompt "Select Drive you wish to blank"
 if the result is not false then
 	set driveID to item 1 of the result
-else if driveID is equal to "" then
-	display dialog "Please choose a Drive"
-	quit
+else if the result is false then
+	display dialog "Please choose a Drive or hit -Cancel-"
 end if
 
-
+####################################################
 # Find the physical IDENTIFIER for the drive selected by the user
+####################################################
 set driveNumber to do shell script "diskutil list | grep " & driveID & " | awk '{print $NF}' | cut -c 1-5 | head -n 1"
 
 
+####################################################
 # Display the Users choice and CAUTION prior to drive reset
+####################################################
 tell application "Finder"
 	display dialog "CAUTION: This will reset " & quoted form of driveID & ", " & quoted form of driveNumber & " to a single, blank partition regardless of data or encryption status.  
 	
@@ -31,13 +45,84 @@ tell application "Finder"
 This CANNOT be undone.  Click 'OK' to proceed or 'Cancel' to quit now." buttons {"OK", "Cancel"} default button {"Cancel"} with title "!!! USE CAUTION !!!" with icon caution
 end tell
 
+####################################################
+# UNMOUNT, then RESET the chosen drive to a single, blank partition
+####################################################
+try
+	do shell script "diskutil unmountDisk " & driveNumber & ""
+	do shell script "diskutil partitionDisk " & driveNumber & " GPT HFS+J blank 100%"
+	tell application "Finder"
+		display dialog "The Drive Reset has finished" buttons {"OK"} giving up after 60
+	end tell
+on error
+	display dialog "The drive was unable to be reset.  Please check the hardware or try another utility." with title "!!! DRIVE ERROR !!!" buttons {"OK"} giving up after 60
+	return
+end try
 
+####################################################
+# Ask technician if they'd like to perform a secure wipe of the drive
+# If so, offer some choices
+####################################################
+tell application "Finder"
+	set EraseOption to (choose from list {"Zero-Disk", "Random-Disk", "Secure-Erase"} with prompt "If you need to ERASE this disk, choose from options list below or select 'Cancel'
+	
+NOTE: Zero or Random will take time, be prepared to wait.  Secure-Erase performs a 7-pass DoD wipe and is much longer. " with title "DRIVE ERASURE OPTION
+
+" default items "None" OK button name {"Erase"} cancel button name {"Cancel"})
+end tell
+if the result is not false then
+	set ErasureOption to item 1 of the result
+else if the result is false then
+	tell application "Finder"
+		activate
+		display dialog "Erasure Cancelled" giving up after 3
+	end tell
+	return
+end if
+
+if ErasureOption is "Zero-Disk" then
+	set WipeOption to "zeroDisk"
+	
+else if ErasureOption is "Random-Disk" then
+	set WipeOption to "randomDisk"
+	
+else if ErasureOption is "Secure-Erase" then
+	set WipeOption to "secureErase 2"
+end if
+
+####################################################
+# Proceed with the Drive Wipe and later reset again
+####################################################
+try
+	do shell script "diskutil unmountDisk " & driveNumber & ""
+end try
+tell application "Terminal"
+	try
+		activate of last tab of front window
+		delay 3
+		set w to do script "diskutil " & WipeOption & " " & driveNumber & "" in last tab of front window
+		repeat
+			delay 1
+			if not busy of w then
+				exit repeat
+			end if
+		end repeat
+		## End Delay Here ##
+	end try
+end tell
+
+# Since we just did a complete drive erase, reset the drive again to a single partition
 # UNMOUNT, then RESET the chosen drive to a single, blank partition
 try
 	do shell script "diskutil unmountDisk " & driveNumber & ""
 	do shell script "diskutil partitionDisk " & driveNumber & " GPT HFS+J blank 100%"
+	tell application "Finder"
+		activate
+		display dialog "The Drive Erasure has finished" buttons {"OK"} giving up after 60
+	end tell
 on error
 	display dialog "The drive was unable to be reset.  Please check the hardware or try another utility." with title "!!! DRIVE ERROR !!!" buttons {"OK"} giving up after 60
+	return
 end try
 
 return
